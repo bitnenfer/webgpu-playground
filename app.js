@@ -14,8 +14,14 @@
         adapter: null,
         device: null
     };
+    const textures = {
+        default: null
+    };
     const meshes = {
         monkey: null
+    };
+    const images = {
+        default: null
     };
     const renderer = {
         model: mat4.create(),
@@ -37,7 +43,8 @@
         bindGroup: null,
         pipelineLayout: null,
         renderPipeline: null,
-        depthStencilTexture: null
+        depthStencilTexture: null,
+        sampler: null
     };
 
     function loadBinFiles (paths)
@@ -132,6 +139,61 @@
         };
     }
 
+    function initTexture (device, image, width, height)
+    {
+        const canvas = document.createElement("canvas");
+        const context = canvas.getContext("2d");
+        canvas.width = width;
+        canvas.height = height;
+        context.drawImage(image, 0, 0);
+        const imageData = context.getImageData(0, 0, width, height);
+        const texture = device.createTexture({
+            size: {
+                width: width,
+                height: height,
+                depth: 1
+            },
+            arrayLayerCount: 1,
+            mipLevelCount: 1,
+            sampleCount: 1,
+            dimension: "2d",
+            format: "rgba8unorm",
+            usage: GPUTextureUsage.SAMPLED | GPUTextureUsage.COPY_DST
+        });
+        const mappedTextureBuffer = device.createBufferMapped({
+            size: imageData.data.byteLength,
+            usage: GPUBufferUsage.COPY_SRC
+        });
+        new Uint8Array(mappedTextureBuffer[1]).set(imageData.data, 0);
+        mappedTextureBuffer[0].unmap();
+        const commandEncoder = device.createCommandEncoder({});
+        commandEncoder.copyBufferToTexture(
+            {
+                buffer: mappedTextureBuffer[0],
+                offset: 0,
+                rowPitch: width * 4,
+                imageHeight: height * 4
+            },
+            {
+                texture: texture,
+                mipLevel: 0,
+                arrayLayer: 0,
+                origin: { x: 0, y: 0, z: 0 }
+            },
+            {
+                width: width,
+                height: height,
+                depth: 1
+            }
+        );
+        const commandBuffer = commandEncoder.finish({});
+        device.defaultQueue.submit([ commandBuffer ]);
+        return {
+            texture: texture,
+            textureView: texture.createView()
+        };
+    }
+
     function loadResources () 
     {
         loadTextFiles([meshToLoad]).
@@ -145,7 +207,7 @@
                         renderer.fragShaderBinData = loadedShaders["shaders/basic/basic.frag.bin"];
 
                         mat4.perspective(renderer.projection, 40 * Math.PI / 180, renderer.canvas.width / renderer.canvas.height, 0.1, 1000.0); 
-                        mat4.translate(renderer.view, renderer.view, [0, 0, -10]);
+                        mat4.translate(renderer.view, renderer.view, [0, 0, -6]);
 
                         initGPUResources();
                     }).
@@ -160,6 +222,16 @@
     function initGPUResources () 
     {
         const device = webgpu.device;
+        textures.default = initTexture(device, images.default, images.default.width, images.default.height);
+        renderer.sampler = device.createSampler({ 
+            addressModeU: "repeat",
+            addressModeV: "repeat",
+            addressModeU: "repeat",
+            magFilter: "linear", 
+            minFilter: "linear", 
+            mipmapFilter: "linear" 
+        });
+
         // Create Depth-Stencil Target
         {
             renderer.depthStencilTexture = device.createTexture({
@@ -211,6 +283,24 @@
                         textureComponentType: "float",
                         multisampled: false,
                         hasDynamicOffset: false
+                    },
+                    {
+                        binding: 1,
+                        visibility: GPUShaderStage.FRAGMENT,
+                        type: "sampled-texture",
+                        textureDimension: "2d",
+                        textureComponentType: "float",
+                        multisampled: false,
+                        hasDynamicOffset: false
+                    },
+                    {
+                        binding: 2,
+                        visibility: GPUShaderStage.FRAGMENT,
+                        type: "sampler",
+                        textureDimension: "2d",
+                        textureComponentType: "float",
+                        multisampled: false,
+                        hasDynamicOffset: false
                     }
                 ]
             });
@@ -225,6 +315,14 @@
                             offset: 0,
                             size: renderer.uniformData.byteLength
                         }
+                    },
+                    {
+                        binding: 1,
+                        resource: textures.default.textureView,
+                    },
+                    {
+                        binding: 2,
+                        resource: renderer.sampler
                     }
                 ]
             });
@@ -389,7 +487,12 @@
     }
 
     window.onload = () => {
-        initWebGPU();
+        images.default = new Image();
+        images.default.onload = e => {
+
+            initWebGPU();
+        };
+        images.default.src = "data/textures/rocks_01_dif.jpg";
     };
 
     const meshSelectionElement = document.getElementById("mesh-list");
