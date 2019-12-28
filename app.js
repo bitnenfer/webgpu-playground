@@ -223,7 +223,7 @@
                         resource: {
                             buffer: renderer.uniformBuffer,
                             offset: 0,
-                            size: renderer.model.byteLength
+                            size: renderer.uniformData.byteLength
                         }
                     }
                 ]
